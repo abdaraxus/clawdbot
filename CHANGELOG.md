@@ -11,6 +11,7 @@
 ### Changes
 - CLI: simplify configure section selection (single-select with optional add-more).
 - Onboarding/CLI: group model/auth choice by provider and label Z.AI as GLM 4.7.
+- Tests: modernize live model smoke selection (modern-only, progress, tool+image probes always), load .profile keys, and rotate Anthropic keys on rate limits. (#769) — thanks @steipete.
 - Plugins: add extension loader (tools/RPC/CLI/services), discovery paths, and config schema + Control UI labels (uiHints).
 - Plugins: add `clawdbot plugins install` (path/tgz/npm), plus `list|info|enable|disable|doctor` UX.
 - Plugins: voice-call plugin now real (Twilio/log), adds start/status RPC/CLI/tool + tests.
@@ -45,6 +46,7 @@
 
 ### Fixes
 - Models/Onboarding: configure MiniMax (minimax.io) via Anthropic-compatible `/anthropic` endpoint by default (keep `minimax-api` as a legacy alias).
+- Models: normalize Gemini 3 pro/flash IDs to preview names for Google providers and docs. (#769) — thanks @steipete.
 - Gateway/WebChat: include handshake validation details in the WebSocket close reason for easier debugging; preserve close codes.
 - Gateway/Auth: send invalid connect responses before closing the handshake; stabilize invalid-connect auth test.
 - Gateway: tighten gateway listener detection.
