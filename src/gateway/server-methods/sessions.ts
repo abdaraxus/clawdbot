@@ -423,7 +423,8 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
       const files = fs.readdirSync(sessionsDir);
       // Match pattern: {sessionId}.jsonl.{reason}.{timestamp}
-      const deletedPattern = /^(.+)\.jsonl\.([^.]+)\.(\d{4}-\d{2}-\d{2}T[\d-]+Z?)$/;
+      // Timestamp may include milliseconds like 2026-01-17T03-05-14.440Z
+      const deletedPattern = /^(.+)\.jsonl\.([a-z]+)\.(\d{4}-\d{2}-\d{2}T[\d.-]+Z?)$/;
 
       for (const file of files) {
         const match = file.match(deletedPattern);
