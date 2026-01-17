@@ -199,6 +199,30 @@ export class GatewayChatClient {
     return await this.client.request("sessions.reset", { key });
   }
 
+  async listArchivedSessions(opts: { limit?: number } = {}) {
+    return await this.client.request<{
+      ok: boolean;
+      archived: Array<{
+        file: string;
+        sessionId: string;
+        deletedAt: string;
+        reason: string;
+        sizeBytes: number;
+      }>;
+    }>("sessions.archived", opts);
+  }
+
+  async restoreSession(opts: { file: string; key?: string }) {
+    return await this.client.request<{
+      ok: boolean;
+      restored?: boolean;
+      file?: string;
+      sessionId?: string;
+      fromReason?: string;
+      warning?: string;
+    }>("sessions.restore", opts);
+  }
+
   async getStatus() {
     return await this.client.request("status");
   }

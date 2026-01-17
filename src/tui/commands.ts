@@ -111,6 +111,7 @@ export function getSlashCommands(options: SlashCommandOptions = {}): SlashComman
     { name: "abort", description: "Abort active run" },
     { name: "new", description: "Reset the session" },
     { name: "reset", description: "Reset the session" },
+    { name: "restore", description: "Restore an archived session" },
     { name: "settings", description: "Open settings" },
     { name: "exit", description: "Exit the TUI" },
     { name: "quit", description: "Exit the TUI" },

@@ -268,6 +268,19 @@ export const CHAT_COMMANDS: ChatCommandDefinition[] = (() => {
       textAlias: "/new",
     }),
     defineChatCommand({
+      key: "restore",
+      nativeName: "restore",
+      description: "Restore an archived session.",
+      textAlias: "/restore",
+      args: [
+        {
+          name: "index",
+          description: "Index of archived session to restore (from /restore list)",
+          type: "number",
+        },
+      ],
+    }),
+    defineChatCommand({
       key: "compact",
       description: "Compact the session context.",
       textAlias: "/compact",

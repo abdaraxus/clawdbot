@@ -70,3 +70,21 @@ export const SessionsCompactParamsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+export const SessionsArchivedParamsSchema = Type.Object(
+  {
+    agentId: Type.Optional(NonEmptyString),
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+  },
+  { additionalProperties: false },
+);
+
+export const SessionsRestoreParamsSchema = Type.Object(
+  {
+    /** The archived file path (from sessions.archived list) */
+    file: NonEmptyString,
+    /** Optional session key to restore to (defaults to extracting from file) */
+    key: Type.Optional(NonEmptyString),
+  },
+  { additionalProperties: false },
+);

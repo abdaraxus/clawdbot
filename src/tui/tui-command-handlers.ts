@@ -134,8 +134,8 @@ export function createCommandHandlers(context: CommandHandlerContext) {
       });
       const items = result.sessions.map((session) => ({
         value: session.key,
-        label: session.displayName
-          ? `${session.displayName} (${formatSessionKey(session.key)})`
+        label: (session.displayName || session.label)
+          ? `${session.displayName || session.label} (${formatSessionKey(session.key)})`
           : formatSessionKey(session.key),
         description: session.updatedAt ? new Date(session.updatedAt).toLocaleString() : "",
       }));
@@ -377,6 +377,49 @@ export function createCommandHandlers(context: CommandHandlerContext) {
           await loadHistory();
         } catch (err) {
           chatLog.addSystem(`reset failed: ${String(err)}`);
+        }
+        break;
+      case "restore":
+        try {
+          // List archived sessions if no arg, or restore by index
+          const restoreIndex = args ? parseInt(args, 10) : NaN;
+          
+          if (isNaN(restoreIndex)) {
+            // List archived sessions
+            const result = await client.listArchivedSessions({ limit: 15 });
+            if (!result.archived?.length) {
+              chatLog.addSystem("📦 No archived sessions found.");
+            } else {
+              const lines = result.archived.map((s: { sessionId: string; reason: string; deletedAt: string; sizeBytes: number }, i: number) => {
+                const id = s.sessionId.slice(0, 8);
+                const size = s.sizeBytes < 1024 ? `${s.sizeBytes}B` : 
+                  s.sizeBytes < 1024 * 1024 ? `${(s.sizeBytes / 1024).toFixed(1)}KB` : 
+                  `${(s.sizeBytes / (1024 * 1024)).toFixed(1)}MB`;
+                return `${i + 1}. ${id}… (${s.reason}) — ${size}`;
+              });
+              chatLog.addSystem(`📦 Archived Sessions:\n${lines.join("\n")}\n\nRestore with /restore <#>`);
+            }
+          } else {
+            // Restore by index
+            const listResult = await client.listArchivedSessions({ limit: 15 });
+            if (!listResult.archived?.length || restoreIndex < 1 || restoreIndex > listResult.archived.length) {
+              chatLog.addSystem("⚠️ Invalid index. Run /restore to see available sessions.");
+            } else {
+              const session = listResult.archived[restoreIndex - 1];
+              const restoreResult = await client.restoreSession({
+                file: session.file,
+                key: state.currentSessionKey,
+              });
+              if (restoreResult.ok) {
+                chatLog.addSystem(`✅ Restored session ${session.sessionId.slice(0, 8)}…`);
+                await loadHistory();
+              } else {
+                chatLog.addSystem("⚠️ Failed to restore session.");
+              }
+            }
+          }
+        } catch (err) {
+          chatLog.addSystem(`restore failed: ${String(err)}`);
         }
         break;
       case "abort":

@@ -14,12 +14,14 @@ import {
   ErrorCodes,
   errorShape,
   formatValidationErrors,
+  validateSessionsArchivedParams,
   validateSessionsCompactParams,
   validateSessionsDeleteParams,
   validateSessionsListParams,
   validateSessionsPatchParams,
   validateSessionsResetParams,
   validateSessionsResolveParams,
+  validateSessionsRestoreParams,
 } from "../protocol/index.js";
 import {
   archiveFileOnDisk,
@@ -379,6 +381,203 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         compacted: true,
         archived,
         kept: keptLines.length,
+      },
+      undefined,
+    );
+  },
+  "sessions.archived": ({ params, respond }) => {
+    if (!validateSessionsArchivedParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid sessions.archived params: ${formatValidationErrors(validateSessionsArchivedParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const p = params as { agentId?: string; limit?: number };
+    const cfg = loadConfig();
+    const limit = p.limit ?? 20;
+
+    // Find all session directories to scan
+    const agentId = p.agentId?.trim() || "main";
+    const stateDir =
+      process.env.CLAWDBOT_STATE_DIR || `${process.env.HOME}/.clawdbot`;
+    const sessionsDir = `${stateDir}/agents/${agentId}/sessions`;
+
+    const archived: Array<{
+      file: string;
+      sessionId: string;
+      deletedAt: string;
+      reason: string;
+      sizeBytes: number;
+    }> = [];
+
+    try {
+      if (!fs.existsSync(sessionsDir)) {
+        respond(true, { ok: true, archived: [] }, undefined);
+        return;
+      }
+
+      const files = fs.readdirSync(sessionsDir);
+      // Match pattern: {sessionId}.jsonl.{reason}.{timestamp}
+      const deletedPattern = /^(.+)\.jsonl\.([^.]+)\.(\d{4}-\d{2}-\d{2}T[\d-]+Z?)$/;
+
+      for (const file of files) {
+        const match = file.match(deletedPattern);
+        if (!match) continue;
+
+        const [, sessionId, reason, timestamp] = match;
+        const filePath = `${sessionsDir}/${file}`;
+        try {
+          const stat = fs.statSync(filePath);
+          archived.push({
+            file: filePath,
+            sessionId,
+            deletedAt: timestamp.replace(/-/g, (m, i) => (i > 9 ? ":" : m)),
+            reason,
+            sizeBytes: stat.size,
+          });
+        } catch {
+          // Skip files we can't stat
+        }
+      }
+
+      // Sort by deletedAt descending (newest first)
+      archived.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+
+      respond(true, { ok: true, archived: archived.slice(0, limit) }, undefined);
+    } catch (err) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INTERNAL_ERROR,
+          `Failed to list archived sessions: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+    }
+  },
+  "sessions.restore": async ({ params, respond }) => {
+    if (!validateSessionsRestoreParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid sessions.restore params: ${formatValidationErrors(validateSessionsRestoreParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const p = params as { file: string; key?: string };
+    const filePath = p.file.trim();
+
+    if (!fs.existsSync(filePath)) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.NOT_FOUND, `Archived file not found: ${filePath}`),
+      );
+      return;
+    }
+
+    // Parse the archived filename to extract session info
+    // Pattern: {path}/{sessionId}.jsonl.{reason}.{timestamp}
+    const basename = filePath.split("/").pop() || "";
+    const match = basename.match(/^(.+)\.jsonl\.([^.]+)\.(\d{4}-\d{2}-\d{2}T[\d-]+Z?)$/);
+    if (!match) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `File does not appear to be an archived session: ${basename}`,
+        ),
+      );
+      return;
+    }
+
+    const [, sessionId, reason] = match;
+    const restoredPath = filePath.replace(/\.[^.]+\.\d{4}-\d{2}-\d{2}T[\d-]+Z?$/, "");
+
+    // Check if there's already an active file at the restore path
+    if (fs.existsSync(restoredPath)) {
+      // Archive the current file first
+      try {
+        archiveFileOnDisk(restoredPath, "replaced");
+      } catch (err) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INTERNAL_ERROR,
+            `Failed to archive existing file: ${err instanceof Error ? err.message : String(err)}`,
+          ),
+        );
+        return;
+      }
+    }
+
+    // Rename the archived file back to active
+    try {
+      fs.renameSync(filePath, restoredPath);
+    } catch (err) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INTERNAL_ERROR,
+          `Failed to restore file: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+      return;
+    }
+
+    // Optionally update the session store if a key is provided
+    const sessionKey = p.key?.trim();
+    if (sessionKey) {
+      const cfg = loadConfig();
+      const target = resolveGatewaySessionStoreTarget({ cfg, key: sessionKey });
+      const storePath = target.storePath;
+
+      try {
+        await updateSessionStore(storePath, (store) => {
+          const primaryKey = target.storeKeys[0] ?? sessionKey;
+          store[primaryKey] = {
+            ...store[primaryKey],
+            sessionId,
+            sessionFile: restoredPath,
+            updatedAt: Date.now(),
+          };
+        });
+      } catch (err) {
+        // Non-fatal: file was restored but store update failed
+        respond(
+          true,
+          {
+            ok: true,
+            restored: true,
+            file: restoredPath,
+            sessionId,
+            warning: `Session file restored but store update failed: ${err instanceof Error ? err.message : String(err)}`,
+          },
+          undefined,
+        );
+        return;
+      }
+    }
+
+    respond(
+      true,
+      {
+        ok: true,
+        restored: true,
+        file: restoredPath,
+        sessionId,
+        fromReason: reason,
       },
       undefined,
     );
